@@ -1,0 +1,240 @@
+---
+title: An R Markdown document converted from "R_lecture_02.ipynb"
+output: html_document
+---
+
+# Machine learning lecture
+This notebook will guide you through data exploration with R
+
+```{r}
+# adjust plot size
+options(repr.plot.width=5, repr.plot.height=4)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(gbm)
+library(caret)
+```
+
+## 2.1 Data exploration
+Data exploration is an important task prior to any analysis. By looking at the actual values and visualizing your data, you will get a feeling for value ranges, quality, etc. For example, you might want to pay attention to outliers, variable distributions and patterns. The information will help you in assessing which methods to choose and in checking if input data as well as results of an analysis are plausible.
+
+To start the exploration, we want to load some real world data into the R environment. The loyn dataset from before contains bird densities measured in 56 forest patches in Australia. The predictor variables are patch size, distance to nearest patch, distance to nearest larger patch, year of isolation by clearing, stock grazing history (1=light, 5=intensive) and altitude.
+
+```{r}
+loyn <- read.csv("loyn_data.csv", header = T, sep = ",", dec = ".")
+head(loyn)
+```
+
+Time to explore this data! We will plot some histograms first to examine the distributions of the *dependent* (response) and *independent variables* (predictors).
+
+```{r}
+hist(loyn$LDIST, col = "limegreen", las = 1)
+```
+
+We could also use a boxplot representation for this purpose. They allow for a good identification of outliers.
+
+```{r}
+boxplot(loyn$LDIST,
+        horizontal = T,
+        col = "cornflowerblue",
+        xlab = "distance",
+        main = "Distance to nearest large patch",
+        whisklty = 1)
+points(mean(loyn$LDIST),
+       1,
+       pch = "+",
+       col = "white",
+       cex = 2)
+```
+
+The summary function provides a handy overview of some key statistics in the different variables.
+
+```{r}
+summary(loyn)
+```
+
+Now take your time to plot the other variables with your method of choice and get a feeling for the data.
+
+We also want to examine the relationship between parameters. We can do this using scatterplots where one variable is displayed on the x axis and the other on the y axis. We are interested in observing outliers, and if we can find patterns in the data: Can we observe any covariance between variables? Are the observed relationships linear?
+
+```{r}
+options(repr.plot.width=8, repr.plot.height=8)
+pairs(loyn)
+#car::scatterplotMatrix(loyn)
+```
+
+We might want to transform some predictors to achieve linear relationships with the response variable. Furthermore, this is necessary to reduce the strong leverage of outlier values which could dominate the results of an analysis. Ideally, the predictor values would be uniformly distributed. In case of areas or distances, logarithm and square root are often suitable transformations. In this case, it's a good idea to transform AREA, DIST and LDIST.
+
+```{r}
+options(repr.plot.width = 8, repr.plot.height = 4)
+par(mfrow = c(1,3))
+hist(log10(loyn$AREA))
+hist(log10(loyn$DIST))
+hist(log10(loyn$LDIST))
+```
+
+The line `par(mfrow = c(1,3))` splits the graphic output into one line with 3 columns. Thus we can display multiple plots at once.
+The outcome is still not uniform, but way less skewed. Let's add the transformed variables to our loyn data frame:
+
+```{r}
+loyn$L10AREA <- log10(loyn$AREA)
+loyn$L10DIST <- log10(loyn$DIST)
+loyn$L10LDIST <- log10(loyn$LDIST)
+# if we define a new column with the log-operator it will just be appended without having to use cbind().
+```
+
+Now transform the other variables and add them to the data frame. It might be a good idea to examine the scatterplot matrix again.
+
+## 2.2 Classification and regression trees (CART)
+Now it's time to create a model with the data! CART are a modeling approach for predicting the value of a response variable based on several predictor variables. The algorithm builds on recursively partitioning the observation dataset (hence the function name `rpart`). The splitting is based on a set of splitting rules derived from the predictor variables. In a regression tree, the "best split" is that which maximizes the variance (of the response variable!) between groups. Since all combinations of explaining variance ("how to grow the tree") are tried out, the method is an example of a *greedy algorithm*. The high computational intensity is a feature that many ML approaches have in common.
+
+The whole process of creating and tuning a tree can be termed "training" the model, and our input data is the "training dataset" as opposed to the "test dataset" which describes a subset of the observations that is held out to assess the performance / uncertainty of the model afterwards. Find out more about the implementation of CART in R: https://www.statmethods.net/advstats/cart.html
+
+```{r}
+tree0 <- rpart(ABUND ~ L10AREA + L10DIST + YR.ISOL, data = loyn)
+options(repr.plot.width=6, repr.plot.height=6)
+prp(tree0, extra = 1, box.palette = "auto", border.col = "grey80")
+```
+
+If this works so well, why not increase the number of splits to generate a perfect model? We can tune the tree generation using the `rpart.control()` function to which we can pass different parameters like depth, minimum number of splits or minimum number of features per leaf. In tree based learning methods, those are often called *hyperparameters*.
+
+So let us create a new model with a fully grown tree! What could be the problem here?
+
+```{r}
+tree1 <- rpart(ABUND ~ L10AREA + GRAZE + YR.ISOL, data = loyn,
+             control = rpart.control(minbucket = 1)) # minbucket = min. number of features per leaf
+prp(tree1, extra = 1, box.palette = "auto", border.col = "grey80")
+```
+
+Quite certainly, our initial tree that was built with default hyperparameters, was a better model than the fully grown tree. But how can we actually predict values?
+
+```{r}
+test <- predict(tree0, newdata=data.frame(L10AREA=c(1,3.5), L10DIST=c(1,4),
+                                  YR.ISOL=c(1988, 1920)))
+test
+```
+
+## 2.3 Random Forest
+Since we know now how to build and tune a regression tree, we can now take a look at advanced ML techniques that try to overcome the shortcomings of CART (tend to overfit, not robust). One way to generate more robust models is to generate a multitude of trees to gain many predictions which can then be combined in some way. These approaches are termed *ensemble methods* and can reduce variance through averaging.
+
+Idea: To grow many different trees we need differing training datasets. To achieve this, we can sample with replacement from the observation dataset to generate hundreds of new datasets (this important concept is called *bootstrapping*: http://galton.uchicago.edu/~eichler/stat24600/Handouts/bootstrap.pdf). Now, we can use the bootstrapped datasets to generate hundreds of models and, eventually, all predictions are averaged. This method is termed *bagging* ("bootstrap aggregation"). Bagged preditions are typically better (yield lower test errors) than predictions of a single model (e.g. decision tree) (Breiman 1996). The individual model in an ensemble is called a *weak lerner* as it's predictions are hardly better than chance.
+
+A prominent example (and an enhancement) of bagging is Breimans random forest algorithm. He realized that the total error of the tree models not only depends on tree strength but also on the correlation between trees. Therefore, random forest seeks to decorrelate trees by using a random selection of predictors at each node. By default, trees are not pruned. Here we are using default hyperparameters, e.g. number of variables at each split (`mtry`) = nr. of predictors / 3. Minimum leaf size (`nodesize`) = 5.
+
+```{r}
+rf <- randomForest(ABUND ~ L10AREA + L10DIST + YR.ISOL, data=loyn, ntree=500, importance=T)
+rf
+```
+
+Using `plot()` on a randomForest object displays the reduction of the error over all iterations. Precisely, this is the so-called out-of-bag (OOB) error. It can be calculated at every iteration by making a prediction at each training sample $x_i$ using only those trees that didn't have $x_i$ in their bootstrap sample.
+
+```{r}
+plot(rf)
+```
+
+Why do we want to examine predictor importance? Going beyond good predictions, importance enables us to *interpret* the model. We will use permutation importance (PI, also called mean decrease in accuracy). For regression, *the mean squared error* (MSE) is used as error metric.
+
+We already have an accuary assessment from the OOB samples. Then the column values of a single predictor are permuted and the model is tested on the updated OOB samples (not the training set!). Hence, the importance of a predictor is the difference between baseline and permutation accuracy (or MSE). The rationale is that if accuracy remains the same if you shuffle a predictor randomly, that predictor can't be that important!
+
+**This method is applicable to almost any model**. It is reasonably efficient and robust and thus can be recommended for all models (also outside the domain of ML) as it does not rely on internal model parameters!
+
+Use the `scale = F` option of the `importance()` function to prevent the normalization of importance values. "raw \[permutation\] importance has better statistical properties" (Strobl et al. 2008). **You should only use PI** (`type = 1` option) as the default method "mean decrease in node impurity" is unreliable and biased. See the article by Strobl for details. More information on random forest importance measures: https://explained.ai/rf-importance/
+
+```{r}
+importance(rf, type = 1, scale = F)
+varImpPlot(rf, type = 1, scale = F)
+```
+
+One more problem: Even PI values can be biased when there are correlated predictor variables. So, inspecting a correlation matrix of your predictors before creating a model is generally advisable:
+
+```{r}
+round(cor(loyn[,c(3,8,9)]), digits = 2)
+```
+
+Looking good! This means we can trust our importance estimates. For a larger number of predictors, using the `corrplot` package can be helpful. 
+
+Another helpful diagnostic tool in the `randomForest` package is the partial plot. It shows the marginal effect of a predictor on the predicted response. It can show if the relationship between predictor and response is linear, monotonic, exponential or more complex (in a linear model, the partial plots would be linear). "Marginal" means that the effect of one predictor is tested using all possible combinations of other predictors, i.e. interactions are included! (the opposite would be conditional effect). Let's plot the importance of the 3 predictors used in the random forest:
+
+```{r}
+options(repr.plot.width=8, repr.plot.height=4)
+par(mfrow=c(1,3), las=1)
+partialPlot(rf, loyn, L10AREA, ylim=c(10,28), ylab="predicted bird abundance")
+partialPlot(rf, loyn, L10DIST, ylim=c(10,28))
+partialPlot(rf, loyn, YR.ISOL, ylim=c(10,28))
+```
+
+Other useful RF-related packages: randomForestExplainer, ranger (fast RF implementation)
+
+Now validation? InfJackknife is for CI on predictions. CV would be general model validation...
+
+## 2.4 Boosting
+Instead of growing many trees in parallel and aggregating their predictions, we could create a sequence of regression trees whose predictive abilities improve with every iteration. We say: "a weak learner is boosted to become a strong learner". How does it work?
+
+We begin by building a shallow regression tree based on a part of the dataset (`bag.fraction`). As the bag fraction is randomly selected at each iteration, randomness is introduced. After every iteration, each data point is assigned a weight based on its misfit from the previous iteration. A poorly predicted point (high residuals) will receive a high weight, a well-predicted one a low weight. The more often a sample is misclassified, the more important it becomes. Thus, the model "concentrates" on improving those data points which are difficult to predict. The final model incorporates the weighted information from all previous trees, so this process can also be understood as a weighted averaging of individual trees.
+
+Algorithms differ by their optimization goal. In the following basic example using the `gbm()` function, the MSE is used as optimization (or *loss*) function. Another important concept is the learning rate (or *shrinkage*). The learning rate is an additional weight that is multiplied with the residuals in each iteration. A low learning rate increases the number of necessary steps to find the optimal fit, reduces the chance of overfitting and thus increases the amount of total iterations/trees. The `distribution` argument specifies the loss function to be used. `gaussian` results in squared error optimization.
+
+```{r}
+brt <- gbm(ABUND ~ L10AREA + L10DIST + YR.ISOL, data=loyn, n.trees=5000, distribution="gaussian",
+           interaction.depth=3, cv.folds=5, verbose=F, shrinkage = 0.01)
+brt
+options(repr.plot.width=6, repr.plot.height=4)
+gbm.perf(brt, method = "cv")
+```
+
+To check for overfitting occurence, cross-validation is used (more in this method in the next section). This way, we can determine which of the 5000 fitted models has the optimal fit. The `gbm.perf` function merely returns the iteration number of this optimal tree when assigning an object with it. This best tree number can be used for some cool diagnostic functions. First, let's plot the partial effect plots and compare them to those from the random forest.
+
+```{r}
+best.tree <- gbm.perf(brt, method = "cv", plot.it = F)
+
+options(repr.plot.width=4, repr.plot.height=4)
+par(mfrow = c(1,3), las = 1)
+plot(brt, 1, best.tree, ylim = c(10,30))
+plot(brt, 2, best.tree, ylim = c(10,30))
+plot(brt, 3, best.tree, ylim = c(10,30))
+```
+
+Some more functions: `summary.gbm()` returns the relative influence of each variable. The value is derived from the reduction of squared error attributable to each variable.
+
+```{r}
+summary(brt, n.trees = best.tree, plotit = F)
+pretty.gbm.tree(brt, i.tree = best.tree) # looking at a single tree
+```
+
+## 2.5 Model validation
+In the boosting case, cross-validation (CV) was used at every iteration to calculate some kind of "true error" instead of believing the self-reported prediction error (which got better and better but the model became seriously overfit $\rightarrow$ biased). The concept of CV can be applied to all kinds of models (statistical, ML) to generate robust error values. The idea is to only use a part of the input dataset for building the model (*training sample*), apply the model to the rest of the dataset (*test sample*) and calculate the prediction error (RMSE, MAPE, etc.). To make this procedure robust, it can be repeated multiple times with alternating subsets of the data serving as traing & test samples.
+
+This procedure is called $k$-fold-CV. The dataset is partitioned into $k$ folds, $k$ different models are created and evaluated on the $k$ test folds. The $k$ test metrics are averaged to generate the "true" prediction error. There are many variants of this technique: If $k$ equals the number of data points, it is called Leave-one-out-CV (LOOCV). We can also perform Leave-p-out-CV or Monte-Carlo-CV.
+
+Although it is not necessary to perform a CV for a random forest (OOB error does a similar thing) from a statistical viewpoint, we can still do it to enable model intercomparison. For example, we could compare the prediction error of the RF model with the boosted regression tree model. Instead of coding this by hand (which is a very interesting coding exercise), we can use an extremly useful R-package called `caret`. Caret is an interface for a multitude of ML algorithms implemented in R. Thus, we do not have to care about differences in coding syntax of different R packages. And what's more, we can use an integrated CV calculation! We define the validation method with the `trainControl()` function and pass the resulting options to the `train()` function. Here we can specify our models (using default hyperparameters).
+
+```{r}
+trainctrl <- trainControl(method = "cv", number = 10)
+brt_cv <- train(ABUND ~ L10AREA + L10DIST + YR.ISOL, data=loyn, method = "gbm", distribution = "gaussian",
+                trControl = trainctrl, verbose = FALSE)
+rf_cv <- train(ABUND ~ L10AREA + L10DIST + YR.ISOL, data=loyn, method = "rf", trControl = trainctrl)
+```
+
+Now we use `resamples` for an easy calculation of cross-validated error metrics! The RMSE is a popular error metric as it is interpretable in units of the response variable. Furthermore, squaring ensures that positive and negative deviations do not cancel each other out.
+
+```{r}
+resamps <- resamples(list(boosting = brt_cv, randomForest = rf_cv))
+summary(resamps)
+```
+
+```{r}
+myGrid <- expand.grid(n.trees = c(100, 500, 1000, 2000),
+ interaction.depth = c(1, 3, 5, 7),
+ shrinkage = c(0.01, 0.005),
+ n.minobsinnode = 2)
+
+gbm_tree_tune <- train(ABUND ~ L10AREA + L10DIST + YR.ISOL, data=loyn, method = "gbm", distribution = "gaussian",
+ trControl = trainctrl, verbose = FALSE,
+ tuneGrid = myGrid)
+gbm_tree_tune
+```
+
+## 2.6 Exercise
+Now you can practice the process of model building and evaluation with other data. You could load the iris dataset with `data(iris)`. Alternatively, you can reuse the loyn dataset and build a more complex model (i.e. more predictors) and see if you can achieve better results than before.
+

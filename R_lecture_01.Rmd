@@ -1,0 +1,334 @@
+---
+title: An R Markdown document converted from "R_lecture_01.ipynb"
+output: html_document
+---
+
+# Machine learning lecture
+This notebook will guide you through the basics of programming with R
+
+## R Basics
+R is a free software environment and a language for statistical computing and graphics. The system is highly extensible and therefore can be customized to your needs using packages developed by people from all over the globe. One of the main advantages is its large active community which helps in finding answers to problems quickly: https://stackoverflow.com/questions/tagged/r
+
+#### 1) Math, data types, operators
+So, let's start programming!
+In R, you can perform basic arithmetic operations and functions:
+
+```{r}
+1 + 1
+7 / 2
+log(10)
+abs(-3)
+sqrt(4)
+```
+
+You can assign values to variables and do calculations with those objects:
+
+```{r}
+a <- 49
+print(a)
+a * (2 + 3.2)
+```
+
+Besides numerical values, you can also use character and logical values:
+
+```{r}
+b <- "Riesenrad"
+city <- TRUE # this is a logical variable (boolean)
+c <- 3.77
+```
+
+Logical values can be used for queries with logical operators:
+
+```{r}
+a == 49
+a > 50
+```
+
+Of course we can also convert between data types:
+
+```{r}
+as.character(a)
+as.integer(c)
+```
+
+#### 2) Vectors
+You can combine multiple values of a type in an object: a vector (1D):
+
+```{r}
+temperatures <- c(6, 6.4, 8.1, 7, 10.4, 22, 1, 4.5, 6.7, 1, 0, 5.3)
+trees <- c("birch", "oak", "pine", "larch")
+```
+
+and you can apply functions to vectors:
+
+```{r}
+sort(temperatures)
+```
+
+You can also generate vectors by repeating elements:
+
+```{r}
+ice <- rep(a, times = 10)
+ice2 <- rep(temperatures, times = 3)
+```
+
+Or, you can generate sequence vectors:
+
+```{r}
+a <- 1:30 # this is a short form for ...
+a <- seq(from = 1, to = 30, by = 1)
+b <- seq(from = 1, to = 40, by = 0.3)
+
+# alternatively you can specify a length
+c <- seq(1, 30, length = 100)
+# you can leave argument names ("from") out to type less (but
+# stick to the order)
+print(a)
+```
+
+#### 3) Matrices
+You can also combine multiple values of one type to a 2D matrix:
+
+```{r}
+matrix(data = 5, nrow = 2, ncol = 2)
+# to find out more about a function, you can use the help function
+?matrix
+```
+
+As you can learn from the documentation, we could also use a vector to fill values into a matrix.
+
+```{r}
+mat <- matrix(temperatures, 4, 3, byrow = T)
+print(temperatures)
+print(mat)
+```
+
+There are different commands to get infos about object properties like dimensions or type:
+
+```{r}
+dim(mat)
+str(mat)
+class(mat)
+```
+
+There is also a datatype in R for matrices with n dimension. It's called array and works in a similar way. Furthermore, R provides methods for matrix computation (e.g. product of two matrices). But that goes beyond the scope of this lecture.
+
+#### 4) Indexing
+But how do we access specific data? In R, we use indexing. This is one of the most important features and is needed in almost any application.\
+Get the 4th object in the "temperatures" vector:
+
+```{r}
+temperatures[4]
+# Get the 4th to 8th object
+temperatures[4:8]
+# Note the use of the sequence operator
+```
+
+How does that apply to matrices? Get the element in the 2nd row and 3rd column:
+
+```{r}
+mat[2, 3] # first number is always the row index
+```
+
+How to select the whole first column?
+
+```{r}
+mat[, 1] # just leave the row number out
+```
+
+How to index rows 1 & 2 in the 2nd & 3rd column?
+
+```{r}
+mat2 <- mat[1:2, 2:3]
+# Here you produce a new matrix from the subset!
+```
+
+How to index row 1 in the 1st & 3rd column?
+
+```{r}
+mat[1, c(1, 3)]
+```
+
+#### 5) data frame
+A matrix can only have one data type (e.g. numeric). But there is a method to deal with mixed data. The data frame!
+
+```{r}
+data.frame(trees, "bhd" = c(5, 6, 4, 2.2),
+           "healthy" = c(T, T, F, T))
+```
+
+You can also convert a matrix into a data frame and assign column names with a character vector:
+
+```{r}
+df_mat <- data.frame(mat)
+names(df_mat) <- c("temp", "time", "lemon_price")
+
+print(df_mat)
+```
+
+Different objects have different functions. E.g., we can apply `ncol()` or `nrow()` to data frames and matrices:
+
+```{r}
+ncol(df_mat)
+```
+
+You can also extend data frames. You can use `cbind()` to add a column:
+
+```{r}
+new_col <- c("berlin", "braunschweig", "basel", "budapest")
+df_mat <- cbind(df_mat, "city" = new_col, stringsAsFactors = F)
+# here we overwrite the old df_mat with the new version
+df_mat
+```
+
+In the same manner, we can add rows with `rbind()`:
+
+```{r}
+new_row <- c(3, 8, 45, "brügge")
+new_row
+```
+
+Argh! We cannot have mixed data types in a vector, so R converted all values to strings. Let's use a workaround:
+
+```{r}
+new_row <- c(3, 8, 45, NA) # NA is a missing value
+new_row
+```
+
+Now we can add the row to `df_mat` and insert the city name afterwards:
+
+```{r}
+df_mat <- rbind(df_mat, new_row)
+df_mat[5, 4] <- "brügge"
+print(df_mat)
+```
+
+Now everything is at the right place! Alternatively, you can edit tables excel-like with:
+
+```{r}
+fix(df_mat)
+# this function can be unreliable -> use is not recommended
+```
+
+When an object has column/row names, they can be used for indexing. E.g. to get entries 1-3 of the city column:
+
+```{r}
+df_mat[1:3, "city"]
+```
+
+Retrieve whole columns even faster using the `$` operator:
+
+```{r}
+df_mat$city
+```
+
+#### 6) List & factor
+There are two "special" object types: A list is a collection of objects (can be different objects). You could for example make a list of different vectors you created so far:
+
+```{r}
+l <- list("city" = new_col, "numbers" = ice,
+          temp = temperatures, trees)
+# note how you can define names for lists, even without quot. marks
+l
+```
+
+Indexing works different for lists:
+
+```{r}
+l[[1]]
+# you can also use $-indexing with lists!
+l$city
+```
+
+You can also index elements within objects within the list. Access the 3rd city name and modify it:
+
+```{r}
+l[[1]][3]
+```
+
+```{r}
+l[[1]][3] <- "bratislava"
+```
+
+A factor is an object that assigns values to so-called levels (e.g. strings). They are often used to represent categorical data:
+
+```{r}
+sex <- factor(c("male", "male", "female", "male", "female"))
+print(sex)
+```
+
+Some functions require factors as input.
+#### 4) Statistics
+Of course you can do statistics in R! Just a short insight:
+
+```{r}
+mean(c(4,5,6,7))
+mean(temperatures)
+```
+
+```{r}
+max(trees)
+```
+
+Oops, those aren't even numbers! R returns the alphabetical "maximum" instead
+
+```{r}
+min(new_row, na.rm = T)
+# This option is necessary. Else, the NA value would be returned
+```
+
+There are many useful functions one can discover and we are probably gonna use some more of them later on. Here are some examples:
+
+```{r}
+mean(mat)
+sum(mat)
+colSums(mat)
+```
+
+```{r}
+summary(mat) # useful function for summary statistics
+```
+
+```{r}
+range(mat)
+length(mat) # number of elements in the matrix
+sd(mat)
+```
+
+#### 5) Loading data
+We can load delimited table data like .csv files. The function is straightforward and works well if your data is well-formatted. On a local R installation, you might want to check your working directory first:
+
+```{r}
+getwd()
+# you can change the working directory with setwd().
+# But it won't be necessary in this bundled environment, as the data is already in a recognized location.
+# setwd("/home/hermanns/Documents/Courses")
+```
+
+Now you can load a test dataset.
+
+```{r}
+loyn <- read.csv("loyn_data.csv", header = T, sep = ",", dec = ".")
+head(loyn)
+```
+
+When analyzing data, logical operations can be useful for filtering. E.g. we can query all sites in loyn, which are located at an altitude of 150 m or higher. The first expression generates a logical vector:
+
+```{r}
+idx <- loyn$ALT >= 150
+idx
+```
+
+We can use this index vector to return those rows from the data frame which fulfill the condition.
+
+```{r}
+loyn150 <- loyn[idx, ]
+head(loyn150)
+dim(loyn150) # only 25/56 rows left!
+```
+
+#### 6) Exercise
+Now you can do some coding yourself. Import the "polis.txt" dataset which contains some data of lizard occurences on Mexican islands. You can import files with the `read` function. E.g. use `read.delim()` or `read.csv()`. You can use the help function to check the necessary arguments.
+
+The predictor variable in this dataset is `PARATIO`, the parameter-to-area ratio of the islands. Now plot the mean PA ratio for those islands, where the species occurs (`P`). And compare with the mean value for the `A` islands (absent). Now exclude the mainland (row 20) from your analysis.
+
